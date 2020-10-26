@@ -7,6 +7,7 @@
 
 #include <dirent.h>
 #include <getopt.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +16,8 @@
 
 #define SEC2MILI 1000
 #define MILI2NANO 1000000
+
+volatile int STOP = False;
 
 typedef struct {
   char *dirPath;
@@ -134,16 +137,15 @@ int setupMonitors(Video *video) {
   video->screen_count = ScreenCount(video->display);
   debugLog("Found %d screens\n", video->screen_count);
 
-  video->monitors = (Monitor*) malloc(sizeof(Monitor) * video->screen_count);
+  video->monitors = (Monitor *)malloc(sizeof(Monitor) * video->screen_count);
   if (!video->monitors)
     return -1;
-  for (int curr_screen = 0; curr_screen < video->screen_count;
-       ++curr_screen) {
+  for (int curr_screen = 0; curr_screen < video->screen_count; ++curr_screen) {
     debugLog("Running screen %d\n", curr_screen);
     Monitor *mon = &video->monitors[curr_screen];
 
     mon->width = DisplayWidth(video->display, curr_screen);
-    mon->height= DisplayHeight(video->display, curr_screen);
+    mon->height = DisplayHeight(video->display, curr_screen);
     const int depth = DefaultDepth(video->display, curr_screen);
     Visual *vis = DefaultVisual(video->display, curr_screen);
     const int cm = DefaultColormap(video->display, curr_screen);
@@ -152,7 +154,8 @@ int setupMonitors(Video *video) {
              mon->width, mon->height, depth);
 
     mon->root = RootWindow(video->display, curr_screen);
-    mon->pixmap = XCreatePixmap(video->display, mon->root, mon->width, mon->height, depth);
+    mon->pixmap = XCreatePixmap(video->display, mon->root, mon->width,
+                                mon->height, depth);
 
     mon->render_context = imlib_context_new();
     imlib_context_push(mon->render_context);
@@ -214,9 +217,23 @@ void parseArgs(int argc, char **argv, Args *args) {
     printUsage();
 }
 
+void sig_handler(int signo) {
+  if (signo != SIGINT)
+    return;
+  debugLog("SIGINT received.\n");
+  STOP = True;
+}
+
 int main(int argc, char *argv[]) {
   Args args;
   parseArgs(argc, argv, &args);
+
+  struct sigaction sa;
+  sa.sa_handler = sig_handler;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  if (sigaction(SIGINT, &sa, NULL) == -1) // doesn't kill
+    fprintf(stderr, "Failed setting SIGINT handler.\n");
 
   Images images;
   if (loadImages(&images, args.dirPath) < 0) {
@@ -233,16 +250,16 @@ int main(int argc, char *argv[]) {
   debugLog("Starting render loop\n");
   struct timespec timeout;
   timeout.tv_sec = args.speed / SEC2MILI;
-  timeout.tv_nsec = (args.speed - SEC2MILI * timeout.tv_sec) * MILI2NANO;
+  timeout.tv_nsec = (args.speed % SEC2MILI) * MILI2NANO;
 
-  for (unsigned int cycle = 0; /* true */; ++cycle) {
-    Imlib_Image current = images.imgs[cycle % images.count];
+  for (unsigned int cycle = 0; !STOP; ++cycle) {
+    Imlib_Image* curr_img = &images.imgs[cycle % images.count];
     for (int monitor = 0; monitor < video.screen_count; ++monitor) {
       Monitor *mon = &video.monitors[monitor];
       imlib_context_push(mon->render_context);
       imlib_context_set_dither(1);
       imlib_context_set_blend(1);
-      imlib_context_set_image(current);
+      imlib_context_set_image(*curr_img);
 
       imlib_render_image_on_drawable(0, 0);
 
