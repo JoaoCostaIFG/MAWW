@@ -13,6 +13,9 @@
 #include <string.h>
 #include <time.h>
 
+#define SEC2MILI 1000
+#define MILI2NANO 1000000
+
 typedef struct {
   char *dirPath;
   int speed;
@@ -26,6 +29,12 @@ typedef struct {
 } Monitor;
 
 typedef struct {
+  Display *display;
+  int screen_count;
+  Monitor *monitors;
+} Video;
+
+typedef struct {
   int count;
   Imlib_Image *imgs;
 } Images;
@@ -34,7 +43,7 @@ void debugLog(const char *fmt, ...) {
 #ifdef DEBUG
   va_list ap;
   va_start(ap, fmt);
-  vfprintf(stderr, fmt, ap);
+  vfprintf(stdout, fmt, ap);
   va_end(ap);
 #endif
 }
@@ -116,6 +125,49 @@ int loadImages(Images *images, const char *const dirPath) {
   return 0;
 }
 
+int setupMonitors(Video *video) {
+  debugLog("Loading monitors\n");
+  video->display = XOpenDisplay(NULL);
+  if (!video->display)
+    return -1;
+
+  video->screen_count = ScreenCount(video->display);
+  debugLog("Found %d screens\n", video->screen_count);
+
+  video->monitors = (Monitor*) malloc(sizeof(Monitor) * video->screen_count);
+  if (!video->monitors)
+    return -1;
+  for (int curr_screen = 0; curr_screen < video->screen_count;
+       ++curr_screen) {
+    debugLog("Running screen %d\n", curr_screen);
+    Monitor *mon = &video->monitors[curr_screen];
+
+    mon->width = DisplayWidth(video->display, curr_screen);
+    mon->height= DisplayHeight(video->display, curr_screen);
+    const int depth = DefaultDepth(video->display, curr_screen);
+    Visual *vis = DefaultVisual(video->display, curr_screen);
+    const int cm = DefaultColormap(video->display, curr_screen);
+
+    debugLog("Screen %d: width: %d, height: %d, depth: %d\n", curr_screen,
+             mon->width, mon->height, depth);
+
+    mon->root = RootWindow(video->display, curr_screen);
+    mon->pixmap = XCreatePixmap(video->display, mon->root, mon->width, mon->height, depth);
+
+    mon->render_context = imlib_context_new();
+    imlib_context_push(mon->render_context);
+    imlib_context_set_display(video->display);
+    imlib_context_set_visual(vis);
+    imlib_context_set_colormap(cm);
+    imlib_context_set_drawable(mon->pixmap);
+    imlib_context_set_color_range(imlib_create_color_range());
+    imlib_context_pop();
+  }
+
+  debugLog("Loaded %d screens\n", video->screen_count);
+  return 0;
+}
+
 void printUsage() {
   printf("aww -d <bmp-directory> -s <interval between imgs in ms>\n");
   exit(1);
@@ -125,7 +177,7 @@ void parseArgs(int argc, char **argv, Args *args) {
   if (argc < 3)
     printUsage();
 
-  int gotDir = 0, gotSpeed = 0;
+  int gotDir = False, gotSpeed = False;
   static struct option long_options[] = {
       {"directory", required_argument, 0, 'd'},
       {"speed", required_argument, 0, 's'},
@@ -135,11 +187,11 @@ void parseArgs(int argc, char **argv, Args *args) {
          -1) {
     switch (c) {
     case 'd':
-      gotDir = 1;
+      gotDir = True;
       args->dirPath = optarg;
       break;
     case 's':
-      gotSpeed = 1;
+      gotSpeed = True;
       args->speed = (int)strtol(optarg, NULL, 10);
       break;
     case '?': // invalid option
@@ -168,78 +220,44 @@ int main(int argc, char *argv[]) {
 
   Images images;
   if (loadImages(&images, args.dirPath) < 0) {
-    debugLog("Failed loading images.\n");
+    fprintf(stderr, "Failed loading images.\n");
     exit(1);
   }
 
-  debugLog("Loading monitors\n");
-  Display *display = XOpenDisplay(NULL);
-  if (!display) {
-    fprintf(stderr, "Could not  open XDisplay\n");
-    exit(42);
+  Video video;
+  if (setupMonitors(&video) < 0) {
+    fprintf(stderr, "Failed setting up monitors.\n");
+    exit(1);
   }
 
-  const int screen_count = ScreenCount(display);
-  debugLog("Found %d screens\n", screen_count);
-
-  Monitor *monitors = malloc(sizeof(Monitor) * screen_count);
-  for (int current_screen = 0; current_screen < screen_count;
-       ++current_screen) {
-    debugLog("Running screen %d\n", current_screen);
-
-    const int width = DisplayWidth(display, current_screen);
-    const int height = DisplayHeight(display, current_screen);
-    const int depth = DefaultDepth(display, current_screen);
-    Visual *vis = DefaultVisual(display, current_screen);
-    const int cm = DefaultColormap(display, current_screen);
-
-    debugLog("Screen %d: width: %d, height: %d, depth: %d\n", current_screen,
-             width, height, depth);
-
-    Window root = RootWindow(display, current_screen);
-    Pixmap pixmap = XCreatePixmap(display, root, width, height, depth);
-
-    monitors[current_screen].width = width;
-    monitors[current_screen].height = height;
-    monitors[current_screen].root = root;
-    monitors[current_screen].pixmap = pixmap;
-    monitors[current_screen].render_context = imlib_context_new();
-    imlib_context_push(monitors[current_screen].render_context);
-    imlib_context_set_display(display);
-    imlib_context_set_visual(vis);
-    imlib_context_set_colormap(cm);
-    imlib_context_set_drawable(pixmap);
-    imlib_context_set_color_range(imlib_create_color_range());
-    imlib_context_pop();
-  }
-
-  debugLog("Loaded %d screens\n", screen_count);
-  debugLog("Starting render loop");
-
+  debugLog("Starting render loop\n");
   struct timespec timeout;
-  timeout.tv_sec = 0;
-  timeout.tv_nsec = 100000000;
+  timeout.tv_sec = args.speed / SEC2MILI;
+  timeout.tv_nsec = (args.speed - SEC2MILI * timeout.tv_sec) * MILI2NANO;
 
   for (unsigned int cycle = 0; /* true */; ++cycle) {
     Imlib_Image current = images.imgs[cycle % images.count];
-    for (int monitor = 0; monitor < screen_count; ++monitor) {
-      Monitor *c_monitor = &monitors[monitor];
-      imlib_context_push(c_monitor->render_context);
+    for (int monitor = 0; monitor < video.screen_count; ++monitor) {
+      Monitor *mon = &video.monitors[monitor];
+      imlib_context_push(mon->render_context);
       imlib_context_set_dither(1);
       imlib_context_set_blend(1);
       imlib_context_set_image(current);
 
       imlib_render_image_on_drawable(0, 0);
 
-      setRootAtoms(display, c_monitor);
-      XKillClient(display, AllTemporary);
-      XSetCloseDownMode(display, RetainTemporary);
-      XSetWindowBackgroundPixmap(display, c_monitor->root, c_monitor->pixmap);
-      XClearWindow(display, c_monitor->root);
-      XFlush(display);
-      XSync(display, False);
+      setRootAtoms(video.display, mon);
+      XKillClient(video.display, AllTemporary);
+      XSetCloseDownMode(video.display, RetainTemporary);
+      XSetWindowBackgroundPixmap(video.display, mon->root, mon->pixmap);
+      XClearWindow(video.display, mon->root);
+      XFlush(video.display);
+      XSync(video.display, False);
       imlib_context_pop();
     }
     nanosleep(&timeout, NULL);
   }
+
+  free(images.imgs);
+  free(video.monitors);
 }
