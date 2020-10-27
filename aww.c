@@ -120,7 +120,8 @@ int loadImages(Images *images, const char *const dirPath) {
       strcpy(imgPath, dirPath);
       strcat(imgPath, "/");
       strcat(imgPath, imgName);
-      images->imgs[images->count++] = imlib_load_image(imgPath);
+      images->imgs[images->count] = imlib_load_image(imgPath);
+      ++images->count;
       free(imgPath);
     }
   }
@@ -253,12 +254,12 @@ int main(int argc, char *argv[]) {
   timeout.tv_nsec = (args.speed % SEC2MILI) * MILI2NANO;
 
   for (unsigned int cycle = 0; !STOP; ++cycle) {
-    Imlib_Image* curr_img = &images.imgs[cycle % images.count];
+    Imlib_Image *curr_img = &images.imgs[cycle % images.count];
     for (int monitor = 0; monitor < video.screen_count; ++monitor) {
       Monitor *mon = &video.monitors[monitor];
       imlib_context_push(mon->render_context);
-      imlib_context_set_dither(1);
-      imlib_context_set_blend(1);
+      /* imlib_context_set_dither(1); */
+      /* imlib_context_set_blend(1); */
       imlib_context_set_image(*curr_img);
 
       imlib_render_image_on_drawable(0, 0);
