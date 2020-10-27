@@ -126,6 +126,7 @@ int loadImages(Images *images, const char *const dirPath) {
     }
   }
 
+  closedir(dirp);
   return 0;
 }
 
@@ -164,7 +165,6 @@ int setupMonitors(Video *video) {
     imlib_context_set_visual(vis);
     imlib_context_set_colormap(cm);
     imlib_context_set_drawable(mon->pixmap);
-    imlib_context_set_color_range(imlib_create_color_range());
     imlib_context_pop();
   }
 
@@ -258,24 +258,26 @@ int main(int argc, char *argv[]) {
     for (int monitor = 0; monitor < video.screen_count; ++monitor) {
       Monitor *mon = &video.monitors[monitor];
       imlib_context_push(mon->render_context);
-      /* imlib_context_set_dither(1); */
-      /* imlib_context_set_blend(1); */
       imlib_context_set_image(*curr_img);
 
-      imlib_render_image_on_drawable(0, 0);
+      /* imlib_render_image_on_drawable(0, 0); */
+      imlib_context_set_anti_alias(1);
+      imlib_render_image_on_drawable_at_size(0, 0, 1920, 1080);
 
-      setRootAtoms(video.display, mon);
-      XKillClient(video.display, AllTemporary);
+      setRootAtoms(video.display, mon); // only needed when switching screens
       XSetCloseDownMode(video.display, RetainTemporary);
+      XKillClient(video.display, AllTemporary);
       XSetWindowBackgroundPixmap(video.display, mon->root, mon->pixmap);
       XClearWindow(video.display, mon->root);
       XFlush(video.display);
-      XSync(video.display, False);
       imlib_context_pop();
     }
     nanosleep(&timeout, NULL);
   }
 
   free(images.imgs);
+  for (int monitor = 0; monitor < video.screen_count; ++monitor) {
+    imlib_context_free(video.monitors[monitor].render_context);
+  }
   free(video.monitors);
 }
