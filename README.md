@@ -1,4 +1,4 @@
-# AWW
+# MAW (More Animated Wallpapers)
 
 ## TODO
 
