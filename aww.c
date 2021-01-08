@@ -260,7 +260,6 @@ int main(int argc, char *argv[]) {
       imlib_context_push(mon->render_context);
       imlib_context_set_image(*curr_img);
 
-      /* imlib_render_image_on_drawable(0, 0); */
       imlib_context_set_anti_alias(1);
       imlib_render_image_on_drawable_at_size(0, 0, 1920, 1080);
 
