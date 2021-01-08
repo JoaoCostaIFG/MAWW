@@ -1,8 +1,8 @@
 LDFLAGS = -g -lX11 -lImlib2
 CC = gcc
 CFLAGS = -O2 -Wall -Wextra -Wpedantic
-BIN = maw
-SRC = maw.c
+BIN = maww
+SRC = maww.c
 
 $(BIN) : $(SRC) Makefile
 	$(CC) $(CFLAGS) $(SRC) $(LDFLAGS) -o $(BIN)
