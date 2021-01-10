@@ -60,6 +60,78 @@ void sig_handler(int signo) {
   STOP = True;
 }
 
+/* ARGS */
+void printUsage() {
+  printf("maww -d <bmp-directory> -s <interval between imgs in ms>\n"
+         "\t[<monitor count> <x> <y> <width> <height>]\n");
+  exit(1);
+}
+
+void parseArgs(int argc, char **argv, Args *args) {
+  if (argc < 3)
+    printUsage();
+
+  int gotDir = False, gotSpeed = False;
+  static struct option long_options[] = {
+      {"directory", required_argument, 0, 'd'},
+      {"speed", required_argument, 0, 's'},
+      {0, 0, 0, 0}};
+  int c, option_index = 0;
+  while ((c = getopt_long(argc, argv, "d:s:", long_options, &option_index)) !=
+         -1) {
+    switch (c) {
+    case 'd':
+      gotDir = True;
+      args->dirPath = optarg;
+      break;
+    case 's':
+      gotSpeed = True;
+      args->speed = (int)strtol(optarg, NULL, 10);
+      break;
+    case '?': // invalid option
+    case ':': // missing arg
+      printUsage();
+      break;
+    default:
+      fprintf(stderr, "getopt returned character code %#X\n", c);
+      break;
+    }
+  }
+
+  if (optind < argc) {
+    args->monitorCount = (int)strtol(argv[optind++], NULL, 10);
+    if (!args->monitorCount || argc - optind < args->monitorCount * 4)
+      printUsage(); // TODO better err msg
+    args->monitorSettings = (int *)malloc(sizeof(int) * 4 * args->monitorCount);
+
+    for (int i = 0; optind < argc;) {
+      args->monitorSettings[i++] = (int)strtol(argv[optind++], NULL, 10);
+      args->monitorSettings[i++] = (int)strtol(argv[optind++], NULL, 10);
+      args->monitorSettings[i++] = (int)strtol(argv[optind++], NULL, 10);
+      args->monitorSettings[i++] = (int)strtol(argv[optind++], NULL, 10);
+    }
+
+    // if there's still extras, we don't know what these are
+    if (optind < argc) {
+      printf("Unrecognized arguments: ");
+      while (optind < argc)
+        printf("%s ", argv[optind++]);
+      printf("\n");
+    }
+  } else {
+    // load default drawing location (1920x1080 at 0;0)
+    args->monitorCount = 1;
+    args->monitorSettings = (int *)malloc(sizeof(int) * 4);
+    args->monitorSettings[0] = 0;
+    args->monitorSettings[1] = 0;
+    args->monitorSettings[2] = 1920;
+    args->monitorSettings[3] = 1080;
+  }
+
+  if (!gotDir || !gotSpeed)
+    printUsage();
+}
+
 void setRootAtoms(Display *display, Monitor *monitor) {
   Atom atom_root, atom_eroot, type;
   unsigned char *data_root, *data_eroot;
@@ -181,75 +253,37 @@ int setupMonitors(Video *video) {
   return 0;
 }
 
-void printUsage() {
-  printf("maww -d <bmp-directory> -s <interval between imgs in ms>\n"
-         "\t[<monitor count> <x> <y> <width> <height>]\n");
-  exit(1);
+void draw(Args *args) {
+  // draw on all monitors
+  for (int i = 0; i < args->monitorCount * 4; i += 4) {
+    imlib_render_image_on_drawable_at_size(
+        args->monitorSettings[i], args->monitorSettings[i + 1],
+        args->monitorSettings[i + 2], args->monitorSettings[i + 3]);
+  }
 }
 
-void parseArgs(int argc, char **argv, Args *args) {
-  if (argc < 3)
-    printUsage();
+void multiMonitorLoop(struct timespec *timeout, Args *args, Images *images,
+                      Video *video) {
+  for (unsigned int cycle = 0; !STOP; ++cycle) {
+    Imlib_Image *curr_img = &images->imgs[cycle % images->count];
+    for (int monitor = 0; monitor < video->screen_count; ++monitor) {
+      Monitor *mon = &video->monitors[monitor];
+      imlib_context_push(mon->render_context);
+      imlib_context_set_image(*curr_img);
 
-  int gotDir = False, gotSpeed = False;
-  static struct option long_options[] = {
-      {"directory", required_argument, 0, 'd'},
-      {"speed", required_argument, 0, 's'},
-      {0, 0, 0, 0}};
-  int c, option_index = 0;
-  while ((c = getopt_long(argc, argv, "d:s:", long_options, &option_index)) !=
-         -1) {
-    switch (c) {
-    case 'd':
-      gotDir = True;
-      args->dirPath = optarg;
-      break;
-    case 's':
-      gotSpeed = True;
-      args->speed = (int)strtol(optarg, NULL, 10);
-      break;
-    case '?': // invalid option
-    case ':': // missing arg
-      printUsage();
-      break;
-    default:
-      fprintf(stderr, "getopt returned character code %#X\n", c);
-      break;
+      imlib_context_set_anti_alias(1);
+      draw(args);
+
+      setRootAtoms(video->display, mon); // only needed when switching screens
+      XSetCloseDownMode(video->display, RetainTemporary);
+      XKillClient(video->display, AllTemporary);
+      XSetWindowBackgroundPixmap(video->display, mon->root, mon->pixmap);
+      XClearWindow(video->display, mon->root);
+      XFlush(video->display);
+      imlib_context_pop();
     }
+    nanosleep(timeout, NULL);
   }
-
-  if (optind < argc) {
-    args->monitorCount = (int)strtol(argv[optind++], NULL, 10);
-    if (!args->monitorCount || argc - optind < args->monitorCount * 4)
-      printUsage(); // TODO better err msg
-    args->monitorSettings = (int *)malloc(sizeof(int) * 4 * args->monitorCount);
-
-    for (int i = 0; optind < argc;) {
-      args->monitorSettings[i++] = (int)strtol(argv[optind++], NULL, 10);
-      args->monitorSettings[i++] = (int)strtol(argv[optind++], NULL, 10);
-      args->monitorSettings[i++] = (int)strtol(argv[optind++], NULL, 10);
-      args->monitorSettings[i++] = (int)strtol(argv[optind++], NULL, 10);
-    }
-
-    // if there's still extras, we don't know what these are
-    if (optind < argc) {
-      printf("Unrecognized arguments: ");
-      while (optind < argc)
-        printf("%s ", argv[optind++]);
-      printf("\n");
-    }
-  } else {
-    // load default drawing location (1920x1080 at 0;0)
-    args->monitorCount = 1;
-    args->monitorSettings = (int *)malloc(sizeof(int) * 4);
-    args->monitorSettings[0] = 0;
-    args->monitorSettings[1] = 0;
-    args->monitorSettings[2] = 1920;
-    args->monitorSettings[3] = 1080;
-  }
-
-  if (!gotDir || !gotSpeed)
-    printUsage();
 }
 
 int main(int argc, char *argv[]) {
@@ -280,31 +314,7 @@ int main(int argc, char *argv[]) {
   timeout.tv_sec = args.speed / SEC2MILI;
   timeout.tv_nsec = (args.speed % SEC2MILI) * MILI2NANO;
 
-  for (unsigned int cycle = 0; !STOP; ++cycle) {
-    Imlib_Image *curr_img = &images.imgs[cycle % images.count];
-    for (int monitor = 0; monitor < video.screen_count; ++monitor) {
-      Monitor *mon = &video.monitors[monitor];
-      imlib_context_push(mon->render_context);
-      imlib_context_set_image(*curr_img);
-
-      imlib_context_set_anti_alias(1);
-      // draw all
-      for (int i = 0; i < args.monitorCount * 4; i += 4) {
-        imlib_render_image_on_drawable_at_size(
-            args.monitorSettings[i], args.monitorSettings[i + 1],
-            args.monitorSettings[i + 2], args.monitorSettings[i + 3]);
-      }
-
-      setRootAtoms(video.display, mon); // only needed when switching screens
-      XSetCloseDownMode(video.display, RetainTemporary);
-      XKillClient(video.display, AllTemporary);
-      XSetWindowBackgroundPixmap(video.display, mon->root, mon->pixmap);
-      XClearWindow(video.display, mon->root);
-      XFlush(video.display);
-      imlib_context_pop();
-    }
-    nanosleep(&timeout, NULL);
-  }
+  multiMonitorLoop(&timeout, &args, &images, &video);
 
   free(images.imgs);
   for (int monitor = 0; monitor < video.screen_count; ++monitor) {
