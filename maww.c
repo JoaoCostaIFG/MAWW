@@ -22,6 +22,8 @@ volatile int STOP = False;
 typedef struct {
   char *dirPath;
   int speed;
+  int monitorCount;
+  int *monitorSettings;
 } Args;
 
 typedef struct {
@@ -49,6 +51,13 @@ void debugLog(const char *fmt, ...) {
   vfprintf(stdout, fmt, ap);
   va_end(ap);
 #endif
+}
+
+void sig_handler(int signo) {
+  if (signo != SIGINT)
+    return;
+  debugLog("SIGINT received.\n");
+  STOP = True;
 }
 
 void setRootAtoms(Display *display, Monitor *monitor) {
@@ -173,7 +182,8 @@ int setupMonitors(Video *video) {
 }
 
 void printUsage() {
-  printf("aww -d <bmp-directory> -s <interval between imgs in ms>\n");
+  printf("maww -d <bmp-directory> -s <interval between imgs in ms>\n"
+         "\t[<monitor count> <x> <y> <width> <height>]\n");
   exit(1);
 }
 
@@ -199,6 +209,7 @@ void parseArgs(int argc, char **argv, Args *args) {
       args->speed = (int)strtol(optarg, NULL, 10);
       break;
     case '?': // invalid option
+    case ':': // missing arg
       printUsage();
       break;
     default:
@@ -208,21 +219,37 @@ void parseArgs(int argc, char **argv, Args *args) {
   }
 
   if (optind < argc) {
-    printf("non-option ARGV-elements: ");
-    while (optind < argc)
-      printf("%s ", argv[optind++]);
-    printf("\n");
+    args->monitorCount = (int)strtol(argv[optind++], NULL, 10);
+    if (!args->monitorCount || argc - optind < args->monitorCount * 4)
+      printUsage(); // TODO better err msg
+    args->monitorSettings = (int *)malloc(sizeof(int) * 4 * args->monitorCount);
+
+    for (int i = 0; optind < argc;) {
+      args->monitorSettings[i++] = (int)strtol(argv[optind++], NULL, 10);
+      args->monitorSettings[i++] = (int)strtol(argv[optind++], NULL, 10);
+      args->monitorSettings[i++] = (int)strtol(argv[optind++], NULL, 10);
+      args->monitorSettings[i++] = (int)strtol(argv[optind++], NULL, 10);
+    }
+
+    // if there's still extras, we don't know what these are
+    if (optind < argc) {
+      printf("Unrecognized arguments: ");
+      while (optind < argc)
+        printf("%s ", argv[optind++]);
+      printf("\n");
+    }
+  } else {
+    // load default drawing location (1920x1080 at 0;0)
+    args->monitorCount = 1;
+    args->monitorSettings = (int *)malloc(sizeof(int) * 4);
+    args->monitorSettings[0] = 0;
+    args->monitorSettings[1] = 0;
+    args->monitorSettings[2] = 1920;
+    args->monitorSettings[3] = 1080;
   }
 
   if (!gotDir || !gotSpeed)
     printUsage();
-}
-
-void sig_handler(int signo) {
-  if (signo != SIGINT)
-    return;
-  debugLog("SIGINT received.\n");
-  STOP = True;
 }
 
 int main(int argc, char *argv[]) {
@@ -261,7 +288,12 @@ int main(int argc, char *argv[]) {
       imlib_context_set_image(*curr_img);
 
       imlib_context_set_anti_alias(1);
-      imlib_render_image_on_drawable_at_size(0, 0, 1920, 1080);
+      // draw all
+      for (int i = 0; i < args.monitorCount * 4; i += 4) {
+        imlib_render_image_on_drawable_at_size(
+            args.monitorSettings[i], args.monitorSettings[i + 1],
+            args.monitorSettings[i + 2], args.monitorSettings[i + 3]);
+      }
 
       setRootAtoms(video.display, mon); // only needed when switching screens
       XSetCloseDownMode(video.display, RetainTemporary);

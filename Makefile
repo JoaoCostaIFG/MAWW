@@ -1,6 +1,6 @@
 LDFLAGS = -g -lX11 -lImlib2
 CC = gcc
-CFLAGS = -O2 -Wall -Wextra -Wpedantic
+CFLAGS = -g -O2 -Wall -Wextra -Wpedantic
 BIN = maww
 SRC = maww.c
 
