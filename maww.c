@@ -1,4 +1,5 @@
-#define _POSIX_C_SOURCE 199309L
+/* #define _POSIX_C_SOURCE 199309L */
+#define _DEFAULT_SOURCE
 #define DEBUG
 
 #include <Imlib2.h>
@@ -21,6 +22,7 @@ volatile int STOP = False;
 
 typedef struct {
   char *dirPath;
+  int isRandom;
   int speed;
   int monitorCount;
   int *monitorSettings;
@@ -60,6 +62,22 @@ void sig_handler(int signo) {
   STOP = True;
 }
 
+void die(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+
+  vfprintf(stderr, fmt, ap);
+  if (fmt[0] && fmt[strlen(fmt) - 1] == ':') {
+    fputc(' ', stderr);
+    perror(NULL);
+  } else {
+    fputc('\n', stderr);
+  }
+
+  va_end(ap);
+  exit(1);
+}
+
 /* ARGS */
 void printUsage() {
   printf("maww -d <bmp-directory> -s <interval between imgs in ms>\n"
@@ -71,21 +89,37 @@ void parseArgs(int argc, char **argv, Args *args) {
   if (argc < 3)
     printUsage();
 
-  int gotDir = False, gotSpeed = False;
+  /* load default values */
+  args->isRandom = False;
+  args->speed = 67; // 15fps based on number of frames
+  // default drawing location (1920x1080 at 0;0)
+  args->monitorCount = 1;
+  args->monitorSettings = (int *)malloc(sizeof(int) * 4);
+  if (!args->monitorSettings)
+    die("parseArgs: Failed malloc operation.");
+  args->monitorSettings[0] = 0;
+  args->monitorSettings[1] = 0;
+  args->monitorSettings[2] = 1920;
+  args->monitorSettings[3] = 1080;
+
+  /* parse arguments */
+  int gotDir = False;
   static struct option long_options[] = {
       {"directory", required_argument, 0, 'd'},
+      {"random", required_argument, 0, 'r'},
       {"speed", required_argument, 0, 's'},
       {0, 0, 0, 0}};
   int c, option_index = 0;
-  while ((c = getopt_long(argc, argv, "d:s:", long_options, &option_index)) !=
+  while ((c = getopt_long(argc, argv, "d:r:s:", long_options, &option_index)) !=
          -1) {
     switch (c) {
+    case 'r': // intended fallthrough
+      args->isRandom = True;
     case 'd':
       gotDir = True;
       args->dirPath = optarg;
       break;
     case 's':
-      gotSpeed = True;
       args->speed = (int)strtol(optarg, NULL, 10);
       break;
     case '?': // invalid option
@@ -102,7 +136,11 @@ void parseArgs(int argc, char **argv, Args *args) {
     args->monitorCount = (int)strtol(argv[optind++], NULL, 10);
     if (!args->monitorCount || argc - optind < args->monitorCount * 4)
       printUsage(); // TODO better err msg
-    args->monitorSettings = (int *)malloc(sizeof(int) * 4 * args->monitorCount);
+    int *newMonitorSettings = (int *)realloc(
+        args->monitorSettings, sizeof(int) * 4 * args->monitorCount);
+    if (!newMonitorSettings)
+      die("parseArgs: Failed realloc operation.");
+    args->monitorSettings = newMonitorSettings;
 
     for (int i = 0; optind < argc;) {
       args->monitorSettings[i++] = (int)strtol(argv[optind++], NULL, 10);
@@ -118,17 +156,9 @@ void parseArgs(int argc, char **argv, Args *args) {
         printf("%s ", argv[optind++]);
       printf("\n");
     }
-  } else {
-    // load default drawing location (1920x1080 at 0;0)
-    args->monitorCount = 1;
-    args->monitorSettings = (int *)malloc(sizeof(int) * 4);
-    args->monitorSettings[0] = 0;
-    args->monitorSettings[1] = 0;
-    args->monitorSettings[2] = 1920;
-    args->monitorSettings[3] = 1080;
   }
 
-  if (!gotDir || !gotSpeed)
+  if (!gotDir)
     printUsage();
 }
 
@@ -166,6 +196,51 @@ void setRootAtoms(Display *display, Monitor *monitor) {
                   PropModeReplace, (unsigned char *)&monitor->pixmap, 1);
   XChangeProperty(display, monitor->root, atom_eroot, XA_PIXMAP, 32,
                   PropModeReplace, (unsigned char *)&monitor->pixmap, 1);
+}
+
+int getRandomDir(Args *args) {
+  debugLog("Choosing random image directory\n");
+  const char *const dirPath = args->dirPath;
+
+  DIR *const dirp = opendir(dirPath);
+  if (dirp == NULL)
+    return -1;
+
+  int dirCount = 0;
+  for (struct dirent *entry; (entry = readdir(dirp));) {
+    const char *const entryName = entry->d_name;
+    if (!strcmp(entryName, ".") || !strcmp(entryName, ".."))
+      continue;
+    if (entry->d_type == DT_DIR)
+      ++dirCount;
+  }
+
+  if (dirCount == 0)
+    die("getRandomDir: couldn't find any directory.");
+  int chosenDirInd = (rand() % dirCount) + 1;
+
+  rewinddir(dirp);
+  for (struct dirent *entry; dirCount > 0 && (entry = readdir(dirp));) {
+    const char *const entryName = entry->d_name;
+    if (!strcmp(entryName, ".") || !strcmp(entryName, ".."))
+      continue;
+
+    if (entry->d_type == DT_DIR) {
+      --chosenDirInd;
+      // save chosen dir
+      if (chosenDirInd == 0) {
+        int chosenDirLen = strlen(dirPath) + strlen(entryName) + 1; // %s/%s
+        args->dirPath = malloc(chosenDirLen + 1); // '\0'
+        if (!args->dirPath)
+          die("getRandomDir: Failed alloc operation.");
+        sprintf(args->dirPath, "%s/%s", dirPath, entryName);
+      }
+    }
+  }
+
+  debugLog("getRandomDir: Choose ", args->dirPath);
+  closedir(dirp);
+  return 0;
 }
 
 int loadImages(Images *images, const char *const dirPath) {
@@ -208,6 +283,8 @@ int loadImages(Images *images, const char *const dirPath) {
   }
 
   closedir(dirp);
+  if (images->count == 0)
+    die("loadImages: No images were loaded.");
   return 0;
 }
 
@@ -253,39 +330,6 @@ int setupMonitors(Video *video) {
   return 0;
 }
 
-void draw(Args *args) {
-  // draw on all monitors
-  for (int i = 0; i < args->monitorCount * 4; i += 4) {
-    imlib_render_image_on_drawable_at_size(
-        args->monitorSettings[i], args->monitorSettings[i + 1],
-        args->monitorSettings[i + 2], args->monitorSettings[i + 3]);
-  }
-}
-
-void multiMonitorLoop(struct timespec *timeout, Args *args, Images *images,
-                      Video *video) {
-  for (unsigned int cycle = 0; !STOP; ++cycle) {
-    Imlib_Image *curr_img = &images->imgs[cycle % images->count];
-    for (int monitor = 0; monitor < video->screen_count; ++monitor) {
-      Monitor *mon = &video->monitors[monitor];
-      imlib_context_push(mon->render_context);
-      imlib_context_set_image(*curr_img);
-
-      imlib_context_set_anti_alias(1);
-      draw(args);
-
-      setRootAtoms(video->display, mon); // only needed when switching screens
-      XSetCloseDownMode(video->display, RetainTemporary);
-      XKillClient(video->display, AllTemporary);
-      XSetWindowBackgroundPixmap(video->display, mon->root, mon->pixmap);
-      XClearWindow(video->display, mon->root);
-      XFlush(video->display);
-      imlib_context_pop();
-    }
-    nanosleep(timeout, NULL);
-  }
-}
-
 int main(int argc, char *argv[]) {
   Args args;
   parseArgs(argc, argv, &args);
@@ -297,24 +341,49 @@ int main(int argc, char *argv[]) {
   if (sigaction(SIGINT, &sa, NULL) == -1) // doesn't kill
     fprintf(stderr, "Failed setting SIGINT handler.\n");
 
-  Images images;
-  if (loadImages(&images, args.dirPath) < 0) {
-    fprintf(stderr, "Failed loading images.\n");
-    exit(1);
+  if (args.isRandom) {
+    srand(time(NULL));
+    if (getRandomDir(&args)) // choose random directory
+      die("Failed choosing a random directory.\n");
   }
+  Images images;
+  if (loadImages(&images, args.dirPath) < 0)
+    die("Failed loading images.\n");
 
   Video video;
-  if (setupMonitors(&video) < 0) {
-    fprintf(stderr, "Failed setting up monitors.\n");
-    exit(1);
-  }
+  if (setupMonitors(&video) < 0)
+    die("Failed setting up monitors.\n");
 
   debugLog("Starting render loop\n");
   struct timespec timeout;
   timeout.tv_sec = args.speed / SEC2MILI;
   timeout.tv_nsec = (args.speed % SEC2MILI) * MILI2NANO;
 
-  multiMonitorLoop(&timeout, &args, &images, &video);
+  for (unsigned int cycle = 0; !STOP; ++cycle) {
+    Imlib_Image *curr_img = &images.imgs[cycle % images.count];
+    for (int monitor = 0; monitor < video.screen_count; ++monitor) {
+      Monitor *mon = &video.monitors[monitor];
+      imlib_context_push(mon->render_context);
+      imlib_context_set_image(*curr_img);
+
+      imlib_context_set_anti_alias(1);
+      // draw all
+      for (int i = 0; i < args.monitorCount * 4; i += 4) {
+        imlib_render_image_on_drawable_at_size(
+            args.monitorSettings[i], args.monitorSettings[i + 1],
+            args.monitorSettings[i + 2], args.monitorSettings[i + 3]);
+      }
+
+      setRootAtoms(video.display, mon); // only needed when switching screens
+      XSetCloseDownMode(video.display, RetainTemporary);
+      XKillClient(video.display, AllTemporary);
+      XSetWindowBackgroundPixmap(video.display, mon->root, mon->pixmap);
+      XClearWindow(video.display, mon->root);
+      XFlush(video.display);
+      imlib_context_pop();
+    }
+    nanosleep(&timeout, NULL);
+  }
 
   free(images.imgs);
   for (int monitor = 0; monitor < video.screen_count; ++monitor) {
