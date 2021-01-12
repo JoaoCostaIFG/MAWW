@@ -243,8 +243,26 @@ int getRandomDir(Args *args) {
   return 0;
 }
 
-int strCompare(const void *a, const void *b) {
-  return strcmp(*(const char **)a, *(const char **)b);
+int pathCompare(const void *a, const void *b) {
+  const char *stra = *(const char **)a;
+  const char *strb = *(const char **)b;
+
+  char *sa = strstr(stra, ".bmp");
+  while (*(sa - 1) != '-')
+    --sa;
+  long la = strtol(sa, NULL, 10);
+
+  char *sb = strstr(strb, ".bmp");
+  while (*(sb - 1) != '-')
+    --sb;
+  long lb = strtol(sb, NULL, 10);
+
+  if (la > lb)
+    return 1;
+  else if (la < lb)
+    return -1;
+  else
+    return 0;
 }
 
 int loadImages(Images *images, const char *const dirPath) {
@@ -286,7 +304,7 @@ int loadImages(Images *images, const char *const dirPath) {
 
   /* sort images */
   // Instead of qsort, function for sort on insert (get img num and use it as index maybe?)
-  qsort(imagePaths, pathI, sizeof(char *), strCompare);
+  qsort(imagePaths, pathI, sizeof(char *), pathCompare);
 
   /* load sorted images */
   int max_images = 4;
@@ -297,7 +315,6 @@ int loadImages(Images *images, const char *const dirPath) {
 
   for (int i = 0; i < pathI; ++i) {
     char *const imgPath = imagePaths[i];
-    printf("%s\n", imgPath);
 
     if (images->count + 1 > max_images) {
       max_images *= 2;
