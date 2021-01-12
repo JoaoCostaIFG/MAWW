@@ -230,7 +230,7 @@ int getRandomDir(Args *args) {
       // save chosen dir
       if (chosenDirInd == 0) {
         int chosenDirLen = strlen(dirPath) + strlen(entryName) + 1; // %s/%s
-        args->dirPath = malloc(chosenDirLen + 1); // '\0'
+        args->dirPath = malloc(chosenDirLen + 1);                   // '\0'
         if (!args->dirPath)
           die("getRandomDir: Failed alloc operation.");
         sprintf(args->dirPath, "%s/%s", dirPath, entryName);
@@ -243,6 +243,10 @@ int getRandomDir(Args *args) {
   return 0;
 }
 
+int strCompare(const void *a, const void *b) {
+  return strcmp(*(const char **)a, *(const char **)b);
+}
+
 int loadImages(Images *images, const char *const dirPath) {
   debugLog("Loading images\n");
 
@@ -250,41 +254,69 @@ int loadImages(Images *images, const char *const dirPath) {
   if (dirp == NULL)
     return -1;
 
+  /* get images' paths */
+  int maxPaths = 10, pathI = 0;
+  char **imagePaths = (char **)malloc(sizeof(char *) * maxPaths);
+  if (imagePaths == NULL)
+    return -1;
+
+  for (struct dirent *entry; (entry = readdir(dirp));) {
+    const char *const imgName = entry->d_name;
+
+    // save bitmap paths
+    if (strstr(imgName, ".bmp")) {
+      if (pathI >= maxPaths) {
+        maxPaths *= 2;
+        char **newImagePaths =
+            (char **)realloc(imagePaths, sizeof(char *) * maxPaths);
+        if (newImagePaths == NULL)
+          return -1;
+        imagePaths = newImagePaths;
+      }
+
+      imagePaths[pathI] =
+          (char *)malloc(strlen(dirPath) + strlen("/") + strlen(imgName) + 1);
+      if (imagePaths[pathI] == NULL)
+        return -1;
+
+      sprintf(imagePaths[pathI++], "%s/%s", dirPath, imgName);
+    }
+  }
+  closedir(dirp);
+
+  /* sort images */
+  // Instead of qsort, function for sort on insert (get img num and use it as index maybe?)
+  qsort(imagePaths, pathI, sizeof(char *), strCompare);
+
+  /* load sorted images */
   int max_images = 4;
   images->count = 0;
   images->imgs = (Imlib_Image *)malloc(sizeof(Imlib_Image) * max_images);
   if (images->imgs == NULL)
     return -1;
 
-  for (struct dirent *entry; (entry = readdir(dirp));) {
-    const char *const imgName = entry->d_name;
+  for (int i = 0; i < pathI; ++i) {
+    char *const imgPath = imagePaths[i];
+    printf("%s\n", imgPath);
 
-    if (strstr(imgName, ".bmp")) {
-      if (images->count + 1 > max_images) {
-        max_images *= 2;
-        Imlib_Image *new_images = (Imlib_Image *)realloc(
-            images->imgs, sizeof(Imlib_Image) * max_images);
-        if (new_images == NULL)
-          return -1;
-        images->imgs = new_images;
-      }
-
-      char *const imgPath =
-          (char *)malloc(strlen(dirPath) + strlen("/") + strlen(imgName) + 1);
-      if (imgPath == NULL)
+    if (images->count + 1 > max_images) {
+      max_images *= 2;
+      Imlib_Image *new_images = (Imlib_Image *)realloc(
+          images->imgs, sizeof(Imlib_Image) * max_images);
+      if (new_images == NULL)
         return -1;
-      strcpy(imgPath, dirPath);
-      strcat(imgPath, "/");
-      strcat(imgPath, imgName);
-      images->imgs[images->count] = imlib_load_image(imgPath);
-      ++images->count;
-      free(imgPath);
+      images->imgs = new_images;
     }
-  }
 
-  closedir(dirp);
+    images->imgs[images->count] = imlib_load_image(imgPath);
+    ++images->count;
+    free(imgPath);
+  }
+  free(imagePaths);
+
   if (images->count == 0)
     die("loadImages: No images were loaded.");
+
   return 0;
 }
 
@@ -366,7 +398,7 @@ int main(int argc, char *argv[]) {
       imlib_context_push(mon->render_context);
       imlib_context_set_image(*curr_img);
 
-      imlib_context_set_anti_alias(1);
+      /* imlib_context_set_anti_alias(1); */
       // draw all
       for (int i = 0; i < args.monitorCount * 4; i += 4) {
         imlib_render_image_on_drawable_at_size(

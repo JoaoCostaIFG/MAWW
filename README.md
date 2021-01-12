@@ -2,6 +2,7 @@
 
 ## TODO
 
+- image loading order
 - This looks cool: `./paperview FOLDER SPEED X Y W H FOLDER SPEED X Y W H`
 
 ## Creating a scene (from paperview)
