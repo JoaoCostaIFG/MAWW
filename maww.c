@@ -133,7 +133,7 @@ void parseArgs(int argc, char **argv, Args *args) {
   }
 
   if (optind < argc) {
-    args->monitorCount = (int)strtol(argv[optind++], NULL, 10);
+    args->monitorCount = (argc - optind) / 4;
     if (!args->monitorCount || argc - optind < args->monitorCount * 4)
       printUsage(); // TODO better err msg
     int *newMonitorSettings = (int *)realloc(
@@ -390,6 +390,10 @@ int main(int argc, char *argv[]) {
   if (sigaction(SIGINT, &sa, NULL) == -1) // doesn't kill
     fprintf(stderr, "Failed setting SIGINT handler.\n");
 
+  Video video;
+  if (setupMonitors(&video) < 0)
+    die("Failed setting up monitors.\n");
+
   if (args.isRandom) {
     srand(time(NULL));
     if (getRandomDir(&args)) // choose random directory
@@ -398,10 +402,6 @@ int main(int argc, char *argv[]) {
   Images images;
   if (loadImages(&images, args.dirPath) < 0)
     die("Failed loading images.\n");
-
-  Video video;
-  if (setupMonitors(&video) < 0)
-    die("Failed setting up monitors.\n");
 
   debugLog("Starting render loop\n");
   struct timespec timeout;

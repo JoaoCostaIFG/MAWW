@@ -3,7 +3,6 @@
 ## TODO
 
 - default screen size using video
-- This looks cool: `./paperview FOLDER SPEED X Y W H FOLDER SPEED X Y W H`
 
 ## Creating a scene (from paperview)
 
