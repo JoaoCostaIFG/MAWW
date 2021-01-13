@@ -1,9 +1,5 @@
 # MAWW (More Animated Wallpapers)
 
-## TODO
-
-- default screen size using video
-
 ## Creating a scene (from paperview)
 
 Creating a custom BMP scene folder from a GIF requires imagemagick.

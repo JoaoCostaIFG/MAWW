@@ -51,6 +51,7 @@ void debugLog(const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
   vfprintf(stdout, fmt, ap);
+  fputc('\n', stdout);
   va_end(ap);
 #endif
 }
@@ -198,6 +199,54 @@ void setRootAtoms(Display *display, Monitor *monitor) {
                   PropModeReplace, (unsigned char *)&monitor->pixmap, 1);
 }
 
+int setupMonitors(Video *video, Args* args) {
+  debugLog("Loading monitors..");
+  video->display = XOpenDisplay(NULL);
+  if (!video->display)
+    return -1;
+
+  video->screen_count = ScreenCount(video->display);
+  debugLog("Found %d screens.", video->screen_count);
+
+  video->monitors = (Monitor *)malloc(sizeof(Monitor) * video->screen_count);
+  if (!video->monitors)
+    return -1;
+  for (int curr_screen = 0; curr_screen < video->screen_count; ++curr_screen) {
+    debugLog("Running screen %d.", curr_screen);
+    Monitor *mon = &video->monitors[curr_screen];
+
+    mon->width = DisplayWidth(video->display, curr_screen);
+    mon->height = DisplayHeight(video->display, curr_screen);
+    const int depth = DefaultDepth(video->display, curr_screen);
+    Visual *vis = DefaultVisual(video->display, curr_screen);
+    const int cm = DefaultColormap(video->display, curr_screen);
+
+    debugLog("Screen %d: width: %d, height: %d, depth: %d", curr_screen,
+             mon->width, mon->height, depth);
+
+    mon->root = RootWindow(video->display, curr_screen);
+    mon->pixmap = XCreatePixmap(video->display, mon->root, mon->width,
+                                mon->height, depth);
+
+    mon->render_context = imlib_context_new();
+    imlib_context_push(mon->render_context);
+    imlib_context_set_display(video->display);
+    imlib_context_set_visual(vis);
+    imlib_context_set_colormap(cm);
+    imlib_context_set_drawable(mon->pixmap);
+    imlib_context_pop();
+  }
+
+  if (video->screen_count == 0)
+    die("Couldn't find any screen");
+
+  args->monitorSettings[2] = video->monitors[0].width;
+  args->monitorSettings[3] = video->monitors[0].height;
+
+  debugLog("Loaded %d screens.", video->screen_count);
+  return 0;
+}
+
 int getRandomDir(Args *args) {
   debugLog("Choosing random image directory\n");
   const char *const dirPath = args->dirPath;
@@ -265,8 +314,9 @@ int pathCompare(const void *a, const void *b) {
     return 0;
 }
 
-int loadImages(Images *images, const char *const dirPath) {
-  debugLog("Loading images\n");
+int loadImages(Images *images, const char *const dirPath,
+               const Args *const args) {
+  debugLog("Loading images..");
 
   DIR *const dirp = opendir(dirPath);
   if (dirp == NULL)
@@ -301,9 +351,7 @@ int loadImages(Images *images, const char *const dirPath) {
     }
   }
   closedir(dirp);
-
   /* sort images */
-  // Instead of qsort, function for sort on insert (get img num and use it as index maybe?)
   qsort(imagePaths, pathI, sizeof(char *), pathCompare);
 
   /* load sorted images */
@@ -325,8 +373,15 @@ int loadImages(Images *images, const char *const dirPath) {
       images->imgs = new_images;
     }
 
-    images->imgs[images->count] = imlib_load_image(imgPath);
-    ++images->count;
+    Imlib_Image img = imlib_load_image(imgPath);
+    imlib_context_set_image(img);
+    imlib_context_set_anti_alias(1); // scale with anti alias
+    const int w = imlib_image_get_width();
+    const int h = imlib_image_get_height();
+    images->imgs[images->count++] = imlib_create_cropped_scaled_image(
+        0, 0, w, h, args->monitorSettings[2], args->monitorSettings[3]);
+    imlib_free_image_and_decache();
+
     free(imgPath);
   }
   free(imagePaths);
@@ -337,73 +392,36 @@ int loadImages(Images *images, const char *const dirPath) {
   return 0;
 }
 
-int setupMonitors(Video *video) {
-  debugLog("Loading monitors\n");
-  video->display = XOpenDisplay(NULL);
-  if (!video->display)
-    return -1;
-
-  video->screen_count = ScreenCount(video->display);
-  debugLog("Found %d screens\n", video->screen_count);
-
-  video->monitors = (Monitor *)malloc(sizeof(Monitor) * video->screen_count);
-  if (!video->monitors)
-    return -1;
-  for (int curr_screen = 0; curr_screen < video->screen_count; ++curr_screen) {
-    debugLog("Running screen %d\n", curr_screen);
-    Monitor *mon = &video->monitors[curr_screen];
-
-    mon->width = DisplayWidth(video->display, curr_screen);
-    mon->height = DisplayHeight(video->display, curr_screen);
-    const int depth = DefaultDepth(video->display, curr_screen);
-    Visual *vis = DefaultVisual(video->display, curr_screen);
-    const int cm = DefaultColormap(video->display, curr_screen);
-
-    debugLog("Screen %d: width: %d, height: %d, depth: %d\n", curr_screen,
-             mon->width, mon->height, depth);
-
-    mon->root = RootWindow(video->display, curr_screen);
-    mon->pixmap = XCreatePixmap(video->display, mon->root, mon->width,
-                                mon->height, depth);
-
-    mon->render_context = imlib_context_new();
-    imlib_context_push(mon->render_context);
-    imlib_context_set_display(video->display);
-    imlib_context_set_visual(vis);
-    imlib_context_set_colormap(cm);
-    imlib_context_set_drawable(mon->pixmap);
-    imlib_context_pop();
-  }
-
-  debugLog("Loaded %d screens\n", video->screen_count);
-  return 0;
-}
-
 int main(int argc, char *argv[]) {
-  Args args;
-  parseArgs(argc, argv, &args);
-
   struct sigaction sa;
   sa.sa_handler = sig_handler;
   sigemptyset(&sa.sa_mask);
   sa.sa_flags = 0;
   if (sigaction(SIGINT, &sa, NULL) == -1) // doesn't kill
-    fprintf(stderr, "Failed setting SIGINT handler.\n");
+    die("Failed setting SIGINT handler.");
 
+  // ARGS
+  Args args;
+  parseArgs(argc, argv, &args);
+
+  // VIDEO
   Video video;
-  if (setupMonitors(&video) < 0)
+  if (setupMonitors(&video, &args) < 0)
     die("Failed setting up monitors.\n");
 
+  // IMAGES
   if (args.isRandom) {
     srand(time(NULL));
     if (getRandomDir(&args)) // choose random directory
-      die("Failed choosing a random directory.\n");
+      die("Failed choosing a random directory.");
   }
+  imlib_set_cache_size(4096 * 1024);
   Images images;
-  if (loadImages(&images, args.dirPath) < 0)
-    die("Failed loading images.\n");
+  if (loadImages(&images, args.dirPath, &args) < 0)
+    die("Failed loading images.");
 
-  debugLog("Starting render loop\n");
+  // RENDER LOOP
+  debugLog("Starting render loop..");
   struct timespec timeout;
   timeout.tv_sec = args.speed / SEC2MILI;
   timeout.tv_nsec = (args.speed % SEC2MILI) * MILI2NANO;
@@ -415,9 +433,11 @@ int main(int argc, char *argv[]) {
       imlib_context_push(mon->render_context);
       imlib_context_set_image(*curr_img);
 
-      /* imlib_context_set_anti_alias(1); */
       // draw all
+      // TODO thread pool
       for (int i = 0; i < args.monitorCount * 4; i += 4) {
+        /* imlib_render_image_on_drawable(args.monitorSettings[i], */
+        /* args.monitorSettings[i + 1]); */
         imlib_render_image_on_drawable_at_size(
             args.monitorSettings[i], args.monitorSettings[i + 1],
             args.monitorSettings[i + 2], args.monitorSettings[i + 3]);
