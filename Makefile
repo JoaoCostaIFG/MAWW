@@ -1,4 +1,4 @@
-LDFLAGS = -g -lX11 -lImlib2
+LDFLAGS = -lX11 -lImlib2
 CC = gcc
 CFLAGS = -O2 -Wall -Wextra -Wpedantic
 BIN = maww

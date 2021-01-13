@@ -199,7 +199,7 @@ void setRootAtoms(Display *display, Monitor *monitor) {
                   PropModeReplace, (unsigned char *)&monitor->pixmap, 1);
 }
 
-int setupMonitors(Video *video, Args* args) {
+int setupMonitors(Video *video, Args *args) {
   debugLog("Loading monitors..");
   video->display = XOpenDisplay(NULL);
   if (!video->display)
@@ -373,15 +373,24 @@ int loadImages(Images *images, const char *const dirPath,
       images->imgs = new_images;
     }
 
+    // create target img
+    images->imgs[images->count] =
+        imlib_create_image(args->monitorSettings[2], args->monitorSettings[3]);
+    // load image
     Imlib_Image img = imlib_load_image(imgPath);
     imlib_context_set_image(img);
-    imlib_context_set_anti_alias(1); // scale with anti alias
     const int w = imlib_image_get_width();
     const int h = imlib_image_get_height();
-    images->imgs[images->count++] = imlib_create_cropped_scaled_image(
-        0, 0, w, h, args->monitorSettings[2], args->monitorSettings[3]);
-    imlib_free_image_and_decache();
+    // scale loaded image to target img
+    imlib_context_set_image(images->imgs[images->count++]);
+    imlib_context_set_anti_alias(1); // scale with anti alias
+    imlib_blend_image_onto_image(img, 0, 0, 0, w, h, 0, 0,
+                                 args->monitorSettings[2],
+                                 args->monitorSettings[3]);
 
+    // free all resources we won't need
+    imlib_context_set_image(img);
+    imlib_free_image_and_decache();
     free(imgPath);
   }
   free(imagePaths);
@@ -415,7 +424,7 @@ int main(int argc, char *argv[]) {
     if (getRandomDir(&args)) // choose random directory
       die("Failed choosing a random directory.");
   }
-  imlib_set_cache_size(4096 * 1024);
+  imlib_set_cache_size(4096 * 1024); // 4MB cache
   Images images;
   if (loadImages(&images, args.dirPath, &args) < 0)
     die("Failed loading images.");
@@ -434,7 +443,6 @@ int main(int argc, char *argv[]) {
       imlib_context_set_image(*curr_img);
 
       // draw all
-      // TODO thread pool
       for (int i = 0; i < args.monitorCount * 4; i += 4) {
         /* imlib_render_image_on_drawable(args.monitorSettings[i], */
         /* args.monitorSettings[i + 1]); */
@@ -449,11 +457,13 @@ int main(int argc, char *argv[]) {
       XSetWindowBackgroundPixmap(video.display, mon->root, mon->pixmap);
       XClearWindow(video.display, mon->root);
       XFlush(video.display);
+      /* XSync(video.display, False); */
       imlib_context_pop();
     }
     nanosleep(&timeout, NULL);
   }
 
+  XCloseDisplay(video.display);
   free(images.imgs);
   for (int monitor = 0; monitor < video.screen_count; ++monitor) {
     imlib_context_free(video.monitors[monitor].render_context);
