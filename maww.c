@@ -81,8 +81,8 @@ void die(const char *fmt, ...) {
 
 /* ARGS */
 void printUsage() {
-  printf("maww -d <bmp-directory> -s <interval between imgs in ms>\n"
-         "\t[<monitor count> <x> <y> <width> <height>]\n");
+  printf("maww -d <bmp-directory> [-s <interval between imgs in ms>]\n"
+         "\t[<x> <y> <width> <height>]\n");
   exit(1);
 }
 
