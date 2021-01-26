@@ -1,5 +1,18 @@
 # MAWW (More Animated Wallpapers)
 
+This program allows you to have an animated background on Linux. There are many
+alternatives to do this. I recommend using [paperview](https://github.com/glouw/paperview)
+in case your composite manager doesn't have problems with it, because it has
+much better performance.
+
+I mainly wrote this because I was bored and wanted to learn more about
+[Imlib2](https://docs.enlightenment.org/api/imlib2/html/).
+
+## Dependencies
+
+This depends on [libX11](https://www.x.org/releases/X11R7.7/doc/libX11/libX11/libX11.html)
+and [Imlib2](https://docs.enlightenment.org/api/imlib2/html/).
+
 ## Usage
 
 Basic usage:
