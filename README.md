@@ -8,6 +8,14 @@ much better performance.
 I mainly wrote this because I was bored and wanted to learn more about
 [Imlib2](https://docs.enlightenment.org/api/imlib2/html/).
 
+## Future work
+
+Some things I'd like to do in this project:
+
+- Transition from [libX11](https://www.x.org/releases/X11R7.7/doc/libX11/libX11/libX11.html)
+  to [libxcb](https://xcb.freedesktop.org/).
+- Use [sdl2](https://www.libsdl.org/index.php).
+
 ## Dependencies
 
 This depends on [libX11](https://www.x.org/releases/X11R7.7/doc/libX11/libX11/libX11.html)
