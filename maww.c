@@ -100,6 +100,7 @@ void parseArgs(int argc, char **argv, Args *args) {
     die("parseArgs: Failed malloc operation.");
   args->monitorSettings[0] = 0;
   args->monitorSettings[1] = 0;
+  // TODO: default width and height are set in setupMonitors()
   args->monitorSettings[2] = 1920;
   args->monitorSettings[3] = 1080;
 
@@ -199,7 +200,7 @@ void setRootAtoms(Display *display, Monitor *monitor) {
                   PropModeReplace, (unsigned char *)&monitor->pixmap, 1);
 }
 
-int setupMonitors(Video *video, Args *args) {
+int setupMonitors(Video *video) {
   debugLog("Loading monitors..");
   video->display = XOpenDisplay(NULL);
   if (!video->display)
@@ -240,8 +241,9 @@ int setupMonitors(Video *video, Args *args) {
   if (video->screen_count == 0)
     die("Couldn't find any screen");
 
-  args->monitorSettings[2] = video->monitors[0].width;
-  args->monitorSettings[3] = video->monitors[0].height;
+  // TODO: default monitor settings
+  /* args->monitorSettings[2] = video->monitors[0].width; */
+  /* args->monitorSettings[3] = video->monitors[0].height; */
 
   debugLog("Loaded %d screens.", video->screen_count);
   return 0;
@@ -415,7 +417,7 @@ int main(int argc, char *argv[]) {
 
   // VIDEO
   Video video;
-  if (setupMonitors(&video, &args) < 0)
+  if (setupMonitors(&video) < 0)
     die("Failed setting up monitors.\n");
 
   // IMAGES
