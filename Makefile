@@ -22,13 +22,12 @@ clean:
 	rm -f $(BIN)
 
 pkgname = maww
-pkgver = 1.0.0
 
 dist: clean
-	rm -rf $(pkgname)-$(pkgver)
-	mkdir -p $(pkgname)-$(pkgver)
-	cp Makefile maww.c $(pkgname)-$(pkgver)
-	tar --zstd -cf $(pkgname).pkg.tar.zst $(pkgname)-$(pkgver)
-	rm -rf $(pkgname)-$(pkgver)
+	rm -rf $(pkgname)-$(VERSION)
+	mkdir -p $(pkgname)-$(VERSION)
+	cp Makefile maww.c $(pkgname)-$(VERSION)
+	tar --zstd -cf $(pkgname)-$(VERSION).pkg.tar.zst $(pkgname)-$(VERSION)
+	rm -rf $(pkgname)-$(VERSION)
 	updpkgsums
 	

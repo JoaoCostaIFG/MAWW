@@ -1,20 +1,20 @@
-# Maintainer: Joao Costa <joaocosta.work@posteo.net>
+# Maintainer: JoaoCostaIFG <joaocosta.work@posteo.net>
 
 pkgname=maww
-pkgver=1.0.0
-pkgrel=4
+pkgver=1.0.2
+pkgrel=1
 pkgdesc="Animated backgrounds on Linux"
 arch=("x86_64")
-depends=("imlib2" "libx11")
+url="https://github.com/JoaoCostaIFG/MAWW"
 license=('MIT')
-source=($pkgname.pkg.tar.zst)
-sha512sums=('9a7a9db62747007e9639977722b37b28a9df1689f03f332c79dd343fc1ed43dd44ea4ad7ae331dcc145792c5046591e04b8e49b86de3794e7e05d1f5c8629fdc')
+depends=("imlib2" "libx11")
+source=(${pkgname}-${pkgver}.pkg.tar.zst)
+sha512sums=('48ec911b8ddedd92bdb726b68c625fc0274a69d7335c34152569bd085c72fc206f4844cbdcf77e7a588fa051acbaf49a85eb243e87a66c88c36cc784c59fbda4')
 
 build() {
   cd "$pkgname-$pkgver"
 
-  #./configure --prefix=/usr
-  make PREFIX="/usr"
+  make PREFIX="/usr" maww
 }
 
 package() {
