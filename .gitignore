@@ -1,3 +1,5 @@
 maww
 .ccls-cache
 scenes
+/src/
+**pkg.tar.zst
