@@ -30,4 +30,5 @@ dist: clean
 	tar --zstd -cf $(pkgname)-$(VERSION).pkg.tar.zst $(pkgname)-$(VERSION)
 	rm -rf $(pkgname)-$(VERSION)
 	updpkgsums
+	makepkg --printsrcinfo > .SRCINFO
 	
