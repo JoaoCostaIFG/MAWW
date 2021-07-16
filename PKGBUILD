@@ -9,7 +9,7 @@ url="https://github.com/JoaoCostaIFG/MAWW"
 license=('MIT')
 depends=("imlib2" "libx11")
 source=(${pkgname}-${pkgver}.pkg.tar.zst::https://github.com/JoaoCostaIFG/MAWW/releases/download/v${pkgver}/${pkgname}-${pkgver}.pkg.tar.zst)
-sha512sums=('424d06c17c23e4778fd8b39a6e22340ef7b9d51c6c1dc7755135b26cfb359717bebe6da2ecae917599d8913774097b13c3ed12fa7d1ce099709766bb73634228')
+sha512sums=('a5946705d85c8d207e8aedb918727020f5b0492798d1ebb749c2d7c941a0db3518f32726f99f4d8ccd682e023a2bf799f78fd178b3a8f54da440b64add8d53f1')
 
 build() {
   cd "$pkgname-$pkgver"
