@@ -8,6 +8,6 @@ pkgbase = maww
 	depends = imlib2
 	depends = libx11
 	source = maww-1.0.0.pkg.tar.zst::https://github.com/JoaoCostaIFG/MAWW/releases/download/v1.0.0/maww-1.0.0.pkg.tar.zst
-	sha512sums = a5946705d85c8d207e8aedb918727020f5b0492798d1ebb749c2d7c941a0db3518f32726f99f4d8ccd682e023a2bf799f78fd178b3a8f54da440b64add8d53f1
+	sha512sums = 464a0fa845bfcc725c8751a8c89c6f7b45704329b7cd0021d0819206c2637c24e019208efc9acb4f66cfeda489620307512e2de54e90c6f090c90d9b65a18b43
 
 pkgname = maww
